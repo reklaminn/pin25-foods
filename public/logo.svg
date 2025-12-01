@@ -1,0 +1,19 @@
+<svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="#006838"/>
+  
+  <!-- Top-left bracket -->
+  <path d="M 40 60 L 40 80 M 40 60 L 60 60" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- P25 Text (simplified as paths) -->
+  <text x="100" y="90" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="white" text-anchor="middle">P25</text>
+  
+  <!-- FOODS Text -->
+  <text x="100" y="120" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="white" text-anchor="middle">FOODS</text>
+  
+  <!-- & CLOUD KITCHEN Text -->
+  <text x="100" y="140" font-family="Arial, sans-serif" font-size="10" font-weight="600" fill="white" text-anchor="middle">& CLOUD KITCHEN</text>
+  
+  <!-- Bottom-right bracket -->
+  <path d="M 160 140 L 160 120 M 160 140 L 140 140" stroke="white" stroke-width="4" stroke-linecap="round"/>
+</svg>
