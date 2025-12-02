@@ -28,7 +28,7 @@ export default function Header() {
   
   const navigation = [
     { name: 'Ana Sayfa', href: '/' },
-    { name: 'Haftanın Menüsü', href: '/haftalik-menu' },
+    { name: 'Haftanın Menüsü', href: '/menu' },
     { name: 'Paketler', href: '/paketler' },
     { name: 'Tanışalım', href: '/taniyalim' },
     { name: 'SSS', href: '/sss' },

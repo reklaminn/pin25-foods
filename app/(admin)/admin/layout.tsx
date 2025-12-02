@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
@@ -9,7 +9,6 @@ import {
   LayoutDashboard, UtensilsCrossed, Calendar, Package, MapPin, Clock, Tag, 
   HelpCircle, Building2, MessageSquare, Settings, Menu, X, LogOut, ChevronDown, User 
 } from 'lucide-react';
-import { signOutAdmin } from '@/lib/auth-helpers';
 
 interface NavItem {
   name: string;
@@ -39,39 +38,59 @@ const navigation: NavItem[] = [
   { name: 'Ayarlar', href: '/admin/ayarlar', icon: Settings },
 ];
 
+// Bypass edilecek sayfalar
+const BYPASS_PAGES = ['/admin/login', '/admin/clear-session'];
+
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [adminUser, setAdminUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Login sayfasında mıyız kontrolü
-  const isLoginPage = pathname === '/admin/login';
+  // Bypass sayfası mı?
+  const shouldBypass = BYPASS_PAGES.includes(pathname);
 
   useEffect(() => {
-    // Eğer login sayfasındaysak auth kontrolü yapma
-    if (isLoginPage) {
-      setLoading(false);
+    // Bypass sayfalarında auth kontrolü yapma
+    if (shouldBypass) {
+      setIsLoading(false);
       return;
     }
 
-    let mounted = true;
+    let isMounted = true;
 
     const checkAuth = async () => {
+      console.log('[Layout] Auth check starting...');
+      
       try {
+        // Session kontrolü
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (sessionError || !session) {
-          throw new Error('No session');
+        if (sessionError) {
+          console.error('[Layout] Session error:', sessionError);
+          if (isMounted) {
+            router.push('/admin/login?redirect=' + pathname);
+          }
+          return;
+        }
+        
+        if (!session) {
+          console.log('[Layout] No session found');
+          if (isMounted) {
+            router.push('/admin/login?redirect=' + pathname);
+          }
+          return;
         }
 
-        // Get admin details
+        console.log('[Layout] Session found:', session.user.email);
+
+        // Admin kontrolü
         const { data: admin, error: adminError } = await supabase
           .from('admins')
           .select('*')
@@ -79,55 +98,63 @@ export default function AdminLayout({
           .single();
 
         if (adminError || !admin || !admin.is_active) {
-          throw new Error('Not authorized');
+          console.log('[Layout] Not a valid admin');
+          await supabase.auth.signOut();
+          if (isMounted) {
+            router.push('/admin/login');
+          }
+          return;
         }
 
-        if (mounted) {
+        console.log('[Layout] Admin verified:', admin.role);
+        
+        if (isMounted) {
           setAdminUser(admin);
-          setLoading(false);
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('[AdminLayout] Auth check failed:', error);
-        if (mounted) {
-          setAdminUser(null);
-          router.replace('/admin/login');
+        
+      } catch (err) {
+        console.error('[Layout] Unexpected error:', err);
+        if (isMounted) {
+          router.push('/admin/login');
         }
       }
     };
 
-    // 1. İlk yüklemede kontrol et
     checkAuth();
 
-    // 2. Auth durum değişikliklerini dinle
+    // Auth state değişikliklerini dinle
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AdminLayout] Auth Event:', event);
+      console.log('[Layout] Auth state changed:', event);
       
       if (event === 'SIGNED_OUT' || !session) {
-        if (mounted) {
-          setAdminUser(null);
-          setLoading(true);
-          router.replace('/admin/login');
+        if (isMounted && !shouldBypass) {
+          router.push('/admin/login');
         }
       } else if (event === 'SIGNED_IN' && session) {
-        checkAuth();
+        // Admin kontrolü yap
+        const { data: admin } = await supabase
+          .from('admins')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (admin && admin.is_active && isMounted) {
+          setAdminUser(admin);
+          setIsLoading(false);
+        }
       }
     });
 
     return () => {
-      mounted = false;
+      isMounted = false;
       subscription.unsubscribe();
     };
-  }, [router, isLoginPage]);
+  }, [pathname, router, shouldBypass]);
 
   const handleSignOut = async () => {
-    try {
-      setLoading(true);
-      await signOutAdmin();
-      router.replace('/admin/login');
-    } catch (error) {
-      console.error('Logout error:', error);
-      setLoading(false);
-    }
+    await supabase.auth.signOut();
+    router.push('/admin/login');
   };
 
   const toggleExpanded = (name: string) => {
@@ -145,19 +172,30 @@ export default function AdminLayout({
     return pathname.startsWith(href);
   };
 
-  // Eğer login sayfasındaysak, sadece içeriği (login formunu) göster
-  // Sidebar veya loading ekranı gösterme
-  if (isLoginPage) {
+  // Bypass sayfaları için direkt children göster
+  if (shouldBypass) {
     return <>{children}</>;
   }
 
-  // Loading durumunda veya adminUser yoksa içeriği gösterme
-  if (loading || !adminUser) {
+  // Loading
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 text-mealora-primary animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Yükleniyor...</p>
+          <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Oturum kontrol ediliyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Not authenticated
+  if (!adminUser) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Yönlendiriliyorsunuz...</p>
         </div>
       </div>
     );
@@ -181,7 +219,7 @@ export default function AdminLayout({
                 </svg>
               </div>
               <div>
-                <span className="font-logo text-sm font-bold text-mealora-primary block leading-tight">
+                <span className="font-logo text-sm font-bold text-green-700 block leading-tight">
                   Admin Panel
                 </span>
               </div>
@@ -204,7 +242,7 @@ export default function AdminLayout({
                         onClick={() => toggleExpanded(item.name)}
                         className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
                           active
-                            ? 'bg-mealora-primary text-white'
+                            ? 'bg-green-600 text-white'
                             : 'text-gray-700 hover:bg-gray-100'
                         }`}
                       >
@@ -228,12 +266,12 @@ export default function AdminLayout({
                                 href={child.href}
                                 className={`flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                                   childActive
-                                    ? 'bg-mealora-primary/10 text-mealora-primary'
+                                    ? 'bg-green-100 text-green-700'
                                     : 'text-gray-600 hover:bg-gray-100'
                                 }`}
                               >
                                 <ChildIcon size={18} />
-                                    <span>{child.name}</span>
+                                <span>{child.name}</span>
                               </Link>
                             );
                           })}
@@ -245,7 +283,7 @@ export default function AdminLayout({
                       href={item.href}
                       className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
                         active
-                          ? 'bg-mealora-primary text-white'
+                          ? 'bg-green-600 text-white'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
                     >
@@ -261,7 +299,7 @@ export default function AdminLayout({
           {/* User Section */}
           <div className="p-4 border-t border-gray-200">
             <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-50">
-              <div className="w-10 h-10 rounded-full bg-mealora-primary text-white flex items-center justify-center font-semibold">
+              <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-semibold">
                 <User size={20} />
               </div>
               <div className="flex-1 min-w-0">
@@ -291,116 +329,33 @@ export default function AdminLayout({
           />
           <aside className="fixed inset-y-0 left-0 w-64 bg-white z-50 lg:hidden">
             <div className="flex flex-col h-full">
-              {/* Logo */}
               <div className="flex items-center justify-between h-20 px-6 border-b border-gray-200">
                 <Link href="/admin" className="flex items-center gap-3">
-                  <div className="w-10 h-10 flex-shrink-0">
-                    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-                      <path d="M40 40 L40 80 M40 40 L80 40" stroke="#4A6B3C" strokeWidth="8" strokeLinecap="round"/>
-                      <text x="70" y="90" fontFamily="Montserrat, sans-serif" fontSize="32" fontWeight="700" fill="#4A6B3C">P25</text>
-                      <text x="50" y="125" fontFamily="Montserrat, sans-serif" fontSize="32" fontWeight="700" fill="#4A6B3C">FOODS</text>
-                      <path d="M160 160 L160 120 M160 160 L120 160" stroke="#4A6B3C" strokeWidth="8" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                  <span className="font-logo text-sm font-bold text-mealora-primary">Admin</span>
+                  <span className="font-logo text-sm font-bold text-green-700">Admin</span>
                 </Link>
                 <button onClick={() => setSidebarOpen(false)}>
                   <X size={24} />
                 </button>
               </div>
-
-              {/* Navigation */}
               <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
                 {navigation.map((item) => {
                   const Icon = item.icon;
                   const active = isActive(item.href);
-                  const hasChildren = item.children && item.children.length > 0;
-                  const isExpanded = expandedItems.includes(item.name);
-
                   return (
-                    <div key={item.name}>
-                      {hasChildren ? (
-                        <>
-                          <button
-                            onClick={() => toggleExpanded(item.name)}
-                            className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-                              active
-                                ? 'bg-mealora-primary text-white'
-                                : 'text-gray-700 hover:bg-gray-100'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <Icon size={20} />
-                              <span>{item.name}</span>
-                            </div>
-                            <ChevronDown 
-                              size={16} 
-                              className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                            />
-                          </button>
-                          {isExpanded && (
-                            <div className="ml-4 mt-1 space-y-1">
-                              {item.children.map((child) => {
-                                const ChildIcon = child.icon;
-                                const childActive = isActive(child.href);
-                                return (
-                                  <Link
-                                    key={child.name}
-                                    href={child.href}
-                                    onClick={() => setSidebarOpen(false)}
-                                    className={`flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                                      childActive
-                                        ? 'bg-mealora-primary/10 text-mealora-primary'
-                                        : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
-                                  >
-                                    <ChildIcon size={18} />
-                                    <span>{child.name}</span>
-                                  </Link>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <Link
-                          href={item.href}
-                          onClick={() => setSidebarOpen(false)}
-                          className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-                            active
-                              ? 'bg-mealora-primary text-white'
-                              : 'text-gray-700 hover:bg-gray-100'
-                          }`}
-                        >
-                          <Icon size={20} />
-                          <span>{item.name}</span>
-                        </Link>
-                      )}
-                    </div>
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={() => setSidebarOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                        active ? 'bg-green-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <Icon size={20} />
+                      <span>{item.name}</span>
+                    </Link>
                   );
                 })}
               </nav>
-
-              {/* User Section */}
-              <div className="p-4 border-t border-gray-200">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-50">
-                  <div className="w-10 h-10 rounded-full bg-mealora-primary text-white flex items-center justify-center font-semibold">
-                    <User size={20} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {adminUser?.full_name || 'Admin'}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">{adminUser?.email}</p>
-                  </div>
-                  <button 
-                    onClick={handleSignOut}
-                    className="text-gray-400 hover:text-red-600 transition-colors"
-                  >
-                    <LogOut size={18} />
-                  </button>
-                </div>
-              </div>
             </div>
           </aside>
         </>
@@ -408,7 +363,6 @@ export default function AdminLayout({
 
       {/* Main Content */}
       <div className="lg:pl-64">
-        {/* Top Bar */}
         <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
           <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
             <button
@@ -417,29 +371,17 @@ export default function AdminLayout({
             >
               <Menu size={24} />
             </button>
-            
             <div className="flex-1 lg:flex-none">
-              <h1 className="text-lg font-semibold text-gray-900">
-                P25 Foods Admin
-              </h1>
+              <h1 className="text-lg font-semibold text-gray-900">P25 Foods Admin</h1>
             </div>
-
             <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                target="_blank"
-                className="text-sm text-gray-600 hover:text-mealora-primary transition-colors"
-              >
+              <Link href="/" target="_blank" className="text-sm text-gray-600 hover:text-green-600">
                 Siteyi Görüntüle
               </Link>
             </div>
           </div>
         </header>
-
-        {/* Page Content */}
-        <main className="p-4 sm:p-6 lg:p-8">
-          {children}
-        </main>
+        <main className="p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>
   );
