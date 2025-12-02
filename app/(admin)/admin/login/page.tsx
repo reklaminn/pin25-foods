@@ -1,13 +1,32 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, Lock, Eye, EyeOff, Shield, AlertCircle, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/button';
 import Input from '@/components/ui/input';
 import { supabase } from '@/lib/supabase';
 
+// Dıştaki component sadece Suspense wrapper
 export default function AdminLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">Yönetim paneli yükleniyor...</p>
+          </div>
+        </div>
+      }
+    >
+      <AdminLoginPageInner />
+    </Suspense>
+  );
+}
+
+// Asıl mantık burada, useSearchParams burada kullanılıyor
+function AdminLoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get('redirect') || '/admin';

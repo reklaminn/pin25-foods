@@ -1,12 +1,33 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
 import Button from '@/components/ui/button';
 import Card from '@/components/ui/card';
 
+// Dış komponent: sadece Suspense wrapper
 export default function CheckoutFailedPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 pt-24 pb-16 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-red-600 animate-pulse" />
+            </div>
+            <p className="text-gray-600">Ödeme sonucu yükleniyor...</p>
+          </div>
+        </div>
+      }
+    >
+      <CheckoutFailedPageInner />
+    </Suspense>
+  );
+}
+
+// Asıl sayfa mantığı burada, useSearchParams burada kullanılıyor
+function CheckoutFailedPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [errorMessage, setErrorMessage] = useState('');
@@ -25,7 +46,9 @@ export default function CheckoutFailedPage() {
       'fraud_suspected': 'Güvenlik nedeniyle işlem reddedildi'
     };
 
-    setErrorMessage(errorMessages[error || ''] || 'Ödeme işlemi sırasında bir hata oluştu');
+    setErrorMessage(
+      errorMessages[error || ''] || 'Ödeme işlemi sırasında bir hata oluştu'
+    );
   }, [searchParams]);
 
   return (
